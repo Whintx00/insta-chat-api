@@ -1,0 +1,33 @@
+
+# Source files
+src/
+examples/
+tools/
+tests/
+
+# Config files
+tsconfig.json
+tsconfig.build.json
+tsconfig.docs.json
+tslint.json
+typedoc.json
+.prettierrc
+.replit
+
+# Development files
+*.ts
+!*.d.ts
+*.map
+
+# Environment
+.env
+.env.example
+account.json
+account.txt
+session.json
+
+# Misc
+*.log
+node_modules/
+coverage/
+.DS_Store
