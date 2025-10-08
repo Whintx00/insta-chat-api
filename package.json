@@ -1,7 +1,7 @@
 {
   "name": "insta-chat-api",
   "description": "Complete Instagram Private API wrapper with unlimited messaging, MQTT real-time support, and cookie authentication for full access to Instagram features",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

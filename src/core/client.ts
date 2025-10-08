@@ -8,6 +8,7 @@ import { FriendshipRepository } from '../repositories/friendship.repository';
 import { UploadRepository } from '../repositories/upload.repository';
 import { PublishService } from '../services/publish.service';
 import { DirectThreadRepository } from '../repositories/direct-thread.repository';
+import { DirectThreadInfoRepository } from '../repositories/direct-thread-info.repository';
 import { EntityFactory } from './entity.factory';
 import { QeRepository } from '../repositories/qe.repository';
 import { ZrRepository } from '../repositories/zr.repository';
@@ -53,6 +54,7 @@ export class IgApiClient {
   public creatives = new CreativesRepository(this);
   public direct = new DirectRepository(this);
   public directThread = new DirectThreadRepository(this);
+  public directThreadInfo = new DirectThreadInfoRepository(this);
   public discover = new DiscoverRepository(this);
   public fbsearch = new FbsearchRepository(this);
   public friendship = new FriendshipRepository(this);

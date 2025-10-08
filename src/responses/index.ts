@@ -59,6 +59,7 @@ export * from './tag.repository.search.response';
 export * from './timeline.feed.response';
 export * from './upload.repository.photo.response';
 export * from './upload.repository.video.response';
+export * from './upload.repository.video.response';
 export * from './user.feed.response';
 export * from './user.repository.info.response';
 export * from './user.repository.search.response';

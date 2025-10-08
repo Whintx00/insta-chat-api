@@ -1,89 +1,315 @@
-
-import * as mqtt from 'mqtt';
+import * as WebSocket from 'ws';
 import debug from 'debug';
 import { IgApiClient } from './client';
 
 const logger = debug('ig:mqtt');
 
 export interface MqttConfig {
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-  clientId?: string;
+  host?: string;
+  topics?: string[];
 }
 
 export class InstagramMqttClient {
-  private client: mqtt.MqttClient | null = null;
+  private ws: WebSocket | null = null;
   private subscriptions: Map<string, Function[]> = new Map();
+  private reconnectInterval: NodeJS.Timeout | null = null;
+  private isConnecting: boolean = false;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private sessionId: string | null = null;
 
   constructor(private ig: IgApiClient) {}
 
   async connect(config?: Partial<MqttConfig>): Promise<void> {
-    const defaultConfig: MqttConfig = {
-      host: 'edge-chat.instagram.com',
-      port: 443,
-      clientId: this.ig.state.deviceId,
-      ...config,
+    if (this.isConnecting || this.ws?.readyState === 1) {
+      logger('Already connected or connecting');
+      return;
+    }
+
+    this.isConnecting = true;
+
+    try {
+      const cookies = await this.ig.state.cookieJar.getCookies('https://www.instagram.com');
+      const cookieHeader = cookies.map(c => `${c.key}=${c.value}`).join('; ');
+
+      const sessionCookie = cookies.find(c => c.key === 'sessionid');
+      const deviceIdCookie = cookies.find(c => c.key === 'ig_did');
+
+      if (!sessionCookie) {
+        throw new Error('Missing sessionid cookie for MQTT');
+      }
+
+      const deviceId = deviceIdCookie?.value || this.generateClientId();
+      this.sessionId = sessionCookie.value.split('%')[0]; // Extract actual session ID
+
+      // Use Instagram's edge-chat endpoint with proper session ID
+      const wsUrl = `wss://edge-chat.instagram.com/chat?sid=${this.sessionId}&cid=${deviceId}`;
+
+      logger('Connecting to:', wsUrl);
+
+      this.ws = new WebSocket(wsUrl, {
+        headers: {
+          Host: 'edge-chat.instagram.com',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+          Connection: 'Upgrade',
+          'Accept-Encoding': 'gzip, deflate, br, zstd',
+          Pragma: 'no-cache',
+          'Cache-Control': 'no-cache',
+          Upgrade: 'websocket',
+          Origin: 'https://www.instagram.com',
+          'Sec-WebSocket-Version': '13',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-WebSocket-Extensions': 'permessage-deflate; client_max_window_bits',
+          Cookie: cookieHeader,
+        },
+      });
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.isConnecting = false;
+          reject(new Error('Connection timeout'));
+        }, 15000);
+
+        this.ws!.on('open', () => {
+          clearTimeout(timeout);
+          this.isConnecting = false;
+          logger('✅ MQTT WebSocket connected');
+
+          // Send MQTT CONNECT packet
+          this.sendConnectPacket();
+          this.setupHeartbeat();
+          this.setupReconnect();
+          resolve();
+        });
+
+        this.ws!.on('message', (data: Buffer) => {
+          this.handleMessage(data);
+        });
+
+        this.ws!.on('error', err => {
+          clearTimeout(timeout);
+          this.isConnecting = false;
+          logger('❌ MQTT error:', err.message);
+          reject(err);
+        });
+
+        this.ws!.on('close', () => {
+          this.isConnecting = false;
+          logger('🔌 MQTT disconnected');
+          this.cleanup();
+          this.setupReconnect();
+        });
+      });
+    } catch (error) {
+      this.isConnecting = false;
+      throw error;
+    }
+  }
+
+  private generateClientId(): string {
+    return `${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+  }
+
+  private sendConnectPacket(): void {
+    if (!this.isConnected()) return;
+
+    // MQTT CONNECT packet with Instagram-specific payload
+    const connectPayload = {
+      clientIdentifier: this.ig.state.deviceId,
+      clientInfo: {
+        userId: this.ig.state.cookieUserId,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        clientCapabilities: 183,
+        endpointCapabilities: 0,
+        publishFormat: 1,
+        noAutomaticForeground: true,
+        makeUserAvailableInForeground: true,
+        deviceId: this.ig.state.deviceId,
+        isInitiallyForeground: true,
+        networkType: 1,
+        networkSubtype: 0,
+        clientMqttSessionId: Date.now(),
+        subscribeTopics: [87, 88, 89],
+        clientType: 'cookie_auth',
+        appId: 567067343352427,
+        deviceSecret: '',
+        clientStack: 3,
+      },
+      password: `sessionid=${this.sessionId}`,
+      appSpecificInfo: {
+        app_version: '1.0.0',
+        'X-IG-Capabilities': '3brTvw==',
+        everclear_subscriptions:
+          '{"inapp_notification_subscribe_comment":"17899377895239777","inapp_notification_subscribe_comment_mention_and_reply":"17899377895239777"}',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'en-US',
+        platform: 'web',
+        ig_mqtt_route: 'django',
+        pubsub_msg_type_blacklist: '',
+        auth_cache_enabled: '0',
+      },
     };
 
-    const connectUrl = `mqtts://${defaultConfig.host}:${defaultConfig.port}`;
-    
-    this.client = mqtt.connect(connectUrl, {
-      clientId: defaultConfig.clientId,
-      username: defaultConfig.username,
-      password: defaultConfig.password,
-      clean: true,
-      reconnectPeriod: 1000,
-    });
+    // Subscribe to message topics immediately after connect
+    setTimeout(() => {
+      this.subscribeToMessages();
+    }, 100);
 
-    return new Promise((resolve, reject) => {
-      this.client!.on('connect', () => {
-        logger('MQTT connected successfully');
-        this.subscribeToTopics();
-        resolve();
-      });
+    logger('📡 MQTT CONNECT sent');
+  }
 
-      this.client!.on('error', (err) => {
-        logger('MQTT connection error:', err);
-        reject(err);
-      });
+  private subscribeToMessages(): void {
+    if (!this.isConnected()) return;
 
-      this.client!.on('message', (topic, message) => {
-        this.handleMessage(topic, message);
-      });
+    // Instagram MQTT subscribe packet for direct messages
+    const subscribeTopics = [
+      '/ig_message_sync',
+      '/ig_send_message_response',
+      '/ig_typing_indicator',
+      '/ig_sub_iris_response',
+      '/pubsub',
+    ];
+
+    subscribeTopics.forEach(topic => {
+      const subscribePacket = this.buildSubscribePacket(topic);
+      this.ws!.send(subscribePacket);
+      logger(`📡 Subscribed to ${topic}`);
     });
   }
 
-  private subscribeToTopics(): void {
-    if (!this.client) return;
+  private buildSubscribePacket(topic: string): Buffer {
+    // MQTT SUBSCRIBE packet format
+    const topicBytes = Buffer.from(topic, 'utf8');
+    const packetId = Math.floor(Math.random() * 65535);
 
-    // Subscribe to direct messages and real-time events
-    this.client.subscribe('/ig_message_sync', { qos: 1 });
-    this.client.subscribe('/ig_realtime_sub', { qos: 1 });
-    this.client.subscribe('/ig_send_message', { qos: 1 });
-    this.client.subscribe('/ig_send_message_response', { qos: 1 });
-    
-    // Typing indicator
-    this.client.subscribe('/ig_typing_indicator', { qos: 1 });
-    
-    // Presence updates
-    this.client.subscribe('/ig_presence', { qos: 1 });
-    
-    // Activity status
-    this.client.subscribe('/ig_activity_indicator_id', { qos: 1 });
-    
-    logger('Subscribed to Instagram MQTT topics');
+    // Fixed header: SUBSCRIBE (0x82), Remaining length
+    const fixedHeader = Buffer.from([0x82, topicBytes.length + 5]);
+
+    // Variable header: Packet ID
+    const variableHeader = Buffer.from([(packetId >> 8) & 0xff, packetId & 0xff]);
+
+    // Payload: Topic length + topic + QoS
+    const topicLength = Buffer.from([(topicBytes.length >> 8) & 0xff, topicBytes.length & 0xff]);
+
+    const qos = Buffer.from([0x01]); // QoS 1
+
+    return Buffer.concat([fixedHeader, variableHeader, topicLength, topicBytes, qos]);
   }
 
-  /**
-   * Send typing indicator to a thread
-   * @param threadId - The thread ID to send typing indicator to
-   * @param isTyping - Whether user is typing (true) or stopped (false)
-   */
+  private setupHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+
+    this.heartbeatInterval = setInterval(() => {
+      if (this.isConnected()) {
+        // MQTT PINGREQ packet
+        const pingPacket = Buffer.from([0xc0, 0x00]);
+        this.ws!.send(pingPacket);
+        logger('💓 PINGREQ sent');
+      }
+    }, 30000);
+  }
+
+  private cleanup(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  private setupReconnect(): void {
+    if (this.reconnectInterval) return;
+
+    this.reconnectInterval = setInterval(() => {
+      if (!this.isConnected() && !this.isConnecting) {
+        logger('🔄 Reconnecting...');
+        this.connect().catch(err => {
+          logger('Reconnect failed:', err.message);
+        });
+      }
+    }, 5000);
+  }
+
+  private handleMessage(data: Buffer): void {
+    try {
+      // Parse MQTT packet
+      const messageType = (data[0] >> 4) & 0x0f;
+
+      logger('📩 MQTT packet type:', messageType.toString(16));
+
+      // PUBLISH packet (type 3)
+      if (messageType === 3) {
+        const qos = (data[0] >> 1) & 0x03;
+        let pos = 1;
+
+        // Decode remaining length
+        let multiplier = 1;
+        let remainingLength = 0;
+        let byte;
+        do {
+          byte = data[pos++];
+          remainingLength += (byte & 127) * multiplier;
+          multiplier *= 128;
+        } while ((byte & 128) !== 0);
+
+        // Topic name length
+        const topicLength = (data[pos] << 8) | data[pos + 1];
+        pos += 2;
+
+        // Topic name
+        const topic = data.slice(pos, pos + topicLength).toString('utf8');
+        pos += topicLength;
+
+        // Packet ID (if QoS > 0)
+        if (qos > 0) {
+          pos += 2;
+        }
+
+        // Payload
+        const payload = data.slice(pos);
+
+        logger(`📬 Topic: ${topic}`);
+        logger(`📦 Payload:`, payload.toString('utf8').substring(0, 200));
+
+        // Parse JSON payload
+        try {
+          const jsonPayload = JSON.parse(payload.toString('utf8'));
+          this.triggerHandlers(topic, jsonPayload);
+          this.triggerHandlers('*', { topic, data: jsonPayload });
+        } catch {
+          // Binary or non-JSON payload
+          logger('Binary payload received');
+        }
+      }
+
+      // PINGRESP (type 13)
+      if (messageType === 13) {
+        logger('💓 PINGRESP received');
+      }
+    } catch (error) {
+      logger('Error parsing MQTT packet:', error);
+    }
+  }
+
+  private triggerHandlers(topic: string, data: any): void {
+    const handlers = this.subscriptions.get(topic);
+    if (handlers) {
+      handlers.forEach(handler => {
+        try {
+          handler(data);
+        } catch (err) {
+          logger('Handler error:', err);
+        }
+      });
+    }
+  }
+
   public sendTypingIndicator(threadId: string, isTyping: boolean = true): void {
-    if (!this.client || !this.client.connected) {
-      logger('MQTT not connected, cannot send typing indicator');
+    if (!this.isConnected()) {
+      logger('❌ MQTT not connected');
       return;
     }
 
@@ -93,22 +319,24 @@ export class InstagramMqttClient {
       client_context: Date.now().toString(),
     };
 
-    this.client.publish('/ig_typing_indicator', JSON.stringify(payload), { qos: 1 });
-    logger(`Typing indicator sent: ${isTyping ? 'typing' : 'stopped'}`);
+    const topic = '/ig_typing_indicator';
+    const payloadStr = JSON.stringify(payload);
+    const publishPacket = this.buildPublishPacket(topic, payloadStr);
+
+    this.ws!.send(publishPacket);
+    logger(`✅ Typing ${isTyping ? 'started' : 'stopped'}`);
   }
 
-  private handleMessage(topic: string, message: Buffer): void {
-    try {
-      const data = JSON.parse(message.toString());
-      logger(`Message received on ${topic}:`, data);
+  private buildPublishPacket(topic: string, payload: string): Buffer {
+    const topicBytes = Buffer.from(topic, 'utf8');
+    const payloadBytes = Buffer.from(payload, 'utf8');
 
-      const handlers = this.subscriptions.get(topic);
-      if (handlers) {
-        handlers.forEach(handler => handler(data));
-      }
-    } catch (error) {
-      logger('Error parsing MQTT message:', error);
-    }
+    const topicLength = Buffer.from([(topicBytes.length >> 8) & 0xff, topicBytes.length & 0xff]);
+
+    const remainingLength = 2 + topicBytes.length + payloadBytes.length;
+    const fixedHeader = Buffer.from([0x30, remainingLength]);
+
+    return Buffer.concat([fixedHeader, topicLength, topicBytes, payloadBytes]);
   }
 
   on(topic: string, callback: Function): void {
@@ -118,18 +346,40 @@ export class InstagramMqttClient {
     this.subscriptions.get(topic)!.push(callback);
   }
 
+  off(topic: string, callback?: Function): void {
+    if (!callback) {
+      this.subscriptions.delete(topic);
+    } else {
+      const handlers = this.subscriptions.get(topic);
+      if (handlers) {
+        const index = handlers.indexOf(callback);
+        if (index > -1) {
+          handlers.splice(index, 1);
+        }
+      }
+    }
+  }
+
   async disconnect(): Promise<void> {
-    if (this.client) {
-      return new Promise((resolve) => {
-        this.client!.end(() => {
+    this.cleanup();
+
+    if (this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+      this.reconnectInterval = null;
+    }
+
+    if (this.ws) {
+      return new Promise(resolve => {
+        this.ws!.once('close', () => {
           logger('MQTT disconnected');
           resolve();
         });
+        this.ws!.close();
       });
     }
   }
 
   isConnected(): boolean {
-    return this.client?.connected || false;
+    return this.ws?.readyState === 1;
   }
 }
