@@ -115,42 +115,45 @@ export class InstagramMqttClient {
   private sendConnectPacket(): void {
     if (!this.isConnected()) return;
 
-    // MQTT CONNECT packet with Instagram-specific payload
-    const connectPayload = {
-      clientIdentifier: this.ig.state.deviceId,
-      clientInfo: {
-        userId: this.ig.state.cookieUserId,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        clientCapabilities: 183,
-        endpointCapabilities: 0,
-        publishFormat: 1,
-        noAutomaticForeground: true,
-        makeUserAvailableInForeground: true,
-        deviceId: this.ig.state.deviceId,
-        isInitiallyForeground: true,
-        networkType: 1,
-        networkSubtype: 0,
-        clientMqttSessionId: Date.now(),
-        subscribeTopics: [87, 88, 89],
-        clientType: 'cookie_auth',
-        appId: 567067343352427,
-        deviceSecret: '',
-        clientStack: 3,
-      },
-      password: `sessionid=${this.sessionId}`,
-      appSpecificInfo: {
-        app_version: '1.0.0',
-        'X-IG-Capabilities': '3brTvw==',
-        everclear_subscriptions:
-          '{"inapp_notification_subscribe_comment":"17899377895239777","inapp_notification_subscribe_comment_mention_and_reply":"17899377895239777"}',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'en-US',
-        platform: 'web',
-        ig_mqtt_route: 'django',
-        pubsub_msg_type_blacklist: '',
-        auth_cache_enabled: '0',
-      },
-    };
+    // Instagram MQTT CONNECT packet
+    // Connect payload is currently not used but kept for future reference
+    // const connectPayload = {
+    //   clientIdentifier: this.client.state.phoneId.substring(0, 20),
+    //   clientInfo: {
+    //     userId: BigInt(this.client.state.cookieUserId),
+    //     userAgent: this.client.state.appUserAgent,
+    //     clientCapabilities: 183,
+    //     endpointCapabilities: 0,
+    //     publishFormat: 1,
+    //     noAutomaticForeground: false,
+    //     makeUserAvailableInForeground: true,
+    //     deviceId: this.client.state.uuid,
+    //     isInitiallyForeground: true,
+    //     networkType: 1,
+    //     networkSubtype: 0,
+    //     clientMqttSessionId: BigInt(Date.now()) & BigInt(0xffffffff),
+    //     subscribeTopics: [88, 135, 149, 150, 133, 146],
+    //     clientType: 'cookie_auth',
+    //     appId: BigInt(567067343352427),
+    //     deviceSecret: '',
+    //     clientStack: 3,
+    //   },
+    //   password: `sessionid=${this.client.state.extractCookieValue('sessionid')}`,
+    //   getDiffsRequests: [],
+    //   zeroRating: null,
+    //   appSpecificInfo: {
+    //     app_version: this.client.state.appVersion,
+    //     'X-IG-Capabilities': this.client.state.capabilitiesHeader,
+    //     everclear_subscriptions:
+    //       '{\"inapp_notification_subscribe_comment\":\"17899377895239777\",\"inapp_notification_subscribe_comment_mention_and_reply\":\"17899377895239777\",\"video_call_participant_state_delivery\":\"17977239895057311\",\"presence_subscribe\":\"17846944882223835\"}',
+    //     'User-Agent': this.client.state.appUserAgent,
+    //     'Accept-Language': this.client.state.language.replace('_', '-'),
+    //     platform: 'android',
+    //     ig_mqtt_route': 'django',
+    //     pubsub_msg_type_blacklist': 'direct, typing_type',
+    //     auth_cache_enabled': '0',
+    //   },
+    // };
 
     // Subscribe to message topics immediately after connect
     setTimeout(() => {
@@ -245,14 +248,10 @@ export class InstagramMqttClient {
         const qos = (data[0] >> 1) & 0x03;
         let pos = 1;
 
-        // Decode remaining length
-        let multiplier = 1;
-        let remainingLength = 0;
+        // Decode remaining length (skip it, we don't need the value)
         let byte;
         do {
           byte = data[pos++];
-          remainingLength += (byte & 127) * multiplier;
-          multiplier *= 128;
         } while ((byte & 128) !== 0);
 
         // Topic name length

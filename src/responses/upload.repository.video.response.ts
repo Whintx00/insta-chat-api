@@ -1,14 +1,8 @@
 export interface UploadRepositoryVideoResponseRootObject {
-  upload_id: string;
-  video_upload_urls: UploadRepositoryVideoResponseVideoUploadUrl[];
-  xsharing_nonces: UploadRepositoryVideoResponseXsharingNonces;
   status: string;
+  upload_id: string;
+  video?: {
+    video_url: string;
+    thumbnail_url?: string;
+  };
 }
-
-export interface UploadRepositoryVideoResponseVideoUploadUrl {
-  url: string;
-  job: string;
-  expires: number;
-}
-
-export interface UploadRepositoryVideoResponseXsharingNonces {}
